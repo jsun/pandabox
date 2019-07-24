@@ -5,15 +5,14 @@ import glob
 import errno
 import shutil
 import random
+import numpy as np
 import cv2
 import skimage
-import numpy as np
-
+import joblib
 
 
 
 class imgUtils:
-    
     
     
     
@@ -308,14 +307,6 @@ class imgUtils:
         if r > 0.5:
             bg_img = skimage.filters.gaussian(bg_img, sigma=random.uniform(0.5, 2.0), multichannel=True)
         
-        # swirl
-        r = np.random.rand(1)
-        if r > 0.5:
-            bg_img = skimage.transform.swirl(bg_img, rotation=random.uniform(0, 90),
-                                             strength=random.uniform(5, 15),
-                                             radius=random.uniform(100, 200),
-                                             mode='constant')
-        
         return bg_img
         
         
@@ -375,7 +366,7 @@ class imgUtils:
         
     
     
-    def augmentation(self, input_path=None, output_dirpath=None, n=100, output_prefix='augmented_image'):
+    def augmentation_ss(self, input_path=None, output_dirpath=None, n=100, output_prefix='augmented_image'):
         
         
         if os.path.isfile(input_path):
@@ -392,14 +383,19 @@ class imgUtils:
             # randomly chose an image from the directory
             image_path = random.choice(image_files)
             
-            img = skimage.io.imread(image_path)
+            img = skimage.io.imread(image_path)[:, :, :3]
             
             # randomly rotation
             img_ag = self.__augmentation_rotation(img)
             
             # fill up background (some case can not perform zero-padding)
-            img_ag = self.__augmentation_fill_background(img_ag, img)
-            
+            _img_ag = self.__augmentation_fill_background(img_ag, img)
+            if _img_ag is None:
+                print('==> aug found None image in __augmentation_fill_background: ' + input_path + '.')
+                _img_ag = img_ag
+            img_ag = _img_ag
+
+           
             # randomly reflection
             img_ag = self.__augmentation_flip(img_ag)
             
@@ -413,45 +409,81 @@ class imgUtils:
 
 
 
+    
+    def augmentation(self, input_path=None, output_dirpath=None, n=100, output_prefix='augmented_image', n_jobs=-1):
+        
+        if os.path.isfile(input_path):
+            image_files = [input_path]
+        elif os.path.isdir(input_path):
+            image_files = [os.path.join(input_path, f) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f)) and (not f.startswith('.'))]
+        else:
+            raise ValueError('Unknown types of this file: ' + input_path + '.')
+        
+        
+        def __augmentation_ss(i):
+            # randomly chose an image from the directory
+            img_file = random.choice(image_files)
+            img = skimage.io.imread(img_file)[:, :, :3]
+            
+            # randomly rotation
+            img_ag = self.__augmentation_rotation(img)
+            
+            # fill up background (some case can not perform zero-padding)
+            try:
+                img_ag = self.__augmentation_fill_background(img_ag, img)
+            except:
+                print('image: ' + img_file)
+            
+            # randomly reflection
+            img_ag = self.__augmentation_flip(img_ag)
+            
+            # randomly add noises
+            img_ag = self.__augmentation_noise(img_ag)
+            
+            new_file_path = os.path.join(output_dirpath, output_prefix + '_' + str(i) + '.png')
+            skimage.io.imsave(new_file_path, img_ag)
+        
+        
+        r = joblib.Parallel(n_jobs=n_jobs, verbose=0)([joblib.delayed(__augmentation_ss)(i + 1) for i in range(n)])
 
 
 
-    def synthesis(self, input_path=None, bg_path=None, output_dirpath=None, n=100, output_prefix='synthetic_image'):
+
+    def synthesis(self, input_path=None, bg_path=None, output_dirpath=None, n=100, output_prefix='synthetic_image', n_jobs=-1):
         
         mask_image_files = []
         bg_image_files = []
+        
         
         # make mask image list for random sampling afterward
         if os.path.isfile(input_path):
             mask_image_files = [input_path]
         elif os.path.isdir(input_path):
-            mask_image_files = [os.path.join(input_path, f) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f))]
-        
+            mask_image_files = [os.path.join(input_path, f) for f in os.listdir(input_path) if os.path.isfile(os.path.join(input_path, f)) and (not f.startswith('.'))]
+
         # make background image list for random sampling afterward
         if os.path.isfile(bg_path):
             bg_image_files = [bg_path]
         elif os.path.isdir(bg_path):
-            bg_image_files = [os.path.join(bg_path, f) for f in os.listdir(bg_path) if os.path.isfile(os.path.join(bg_path, f))]
+            bg_image_files = [os.path.join(bg_path, f) for f in os.listdir(bg_path) if os.path.isfile(os.path.join(bg_path, f)) and (not f.startswith('.'))]
         
-        n = n + 1
-        i = 1
-        while i < n:
-            # choose a mask and a background image randomly
+        def __synthesis_ss(i):
+            # load images to objects
             mask_image_file = random.choice(mask_image_files)
             bg_image_file = random.choice(bg_image_files)
+            mask_image = skimage.io.imread(mask_image_file)[:, :, :3]
+            bg_image = skimage.io.imread(bg_image_file)[:, :, :3]
             
-            # load images to objects
-            mask_image = skimage.io.imread(mask_image_file)
-            bg_image = skimage.io.imread(bg_image_file)
-            
+        
             img_ag = self.__augmentation_rotation(mask_image)
-            
-            _img_ag = self.__augmentation_fill_background(img_ag, bg_image)
-            if _img_ag is None:
-                print('==> syn found None image in __augmentation_fill_background: ' + input_path + '.')
-                _img_ag = img_ag
-            img_ag = _img_ag
-            
+            try:
+                img_ag = self.__augmentation_fill_background(img_ag, bg_image)
+            except:
+                print('maskimage: ' + mask_image_file)
+                print('bgimage: ' + bg_image_file)
+                print(bg_image.shape)
+                print(img_ag.shape)
+                print('--------')
             
             img_ag = self.__augmentation_flip(img_ag)
             img_ag = self.__augmentation_noise(img_ag)
@@ -459,8 +491,10 @@ class imgUtils:
             new_file_path = os.path.join(output_dirpath, output_prefix + '_' + str(i) + '.png')
             skimage.io.imsave(new_file_path, img_ag)
             
-            i = i + 1
+        
+        r = joblib.Parallel(n_jobs=n_jobs, verbose=0)([joblib.delayed(__synthesis_ss)(i + 1) for i in range(n)])
 
+        
 
 if __name__ == '__main__':
     
