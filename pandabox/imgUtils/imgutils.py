@@ -103,13 +103,13 @@ class imgUtils:
     def parse_PascalVOC(self, file_path):
     
         objects = []
-        object_name = None
-        object_xmin = None
-        object_ymin = None
-        object_xmax = None
-        object_ymax = None
+        img_shape = [None, None, None]
+        object_dict = {'name': None, 'xmin': None, 'ymin': None, 'xmax': None, 'ymax': None}
         
         # regex for searching object's information
+        re_width = re.compile(r'<width>([0-9]+)</width>')
+        re_height = re.compile(r'<height>([0-9]+)</height>')
+        re_depth = re.compile(r'<depth>([0-9]+)</depth>')
         re_name = re.compile(r'<name>(.+)</name>')
         re_xmin = re.compile(r'<xmin>([0-9]+)</xmin>')
         re_ymin = re.compile(r'<ymin>([0-9]+)</ymin>')
@@ -122,43 +122,49 @@ class imgUtils:
             is_object_record = False
         
             for line in xmlfh:
-            
+                if not is_object_record:
+                    m = re_width.search(line)
+                    if m:
+                        img_shape[0] = int(m.group(1))
+                    m = re_height.search(line)
+                    if m:
+                        img_shape[1] = int(m.group(1))
+                    m = re_depth.search(line)
+                    if m:
+                        img_shape[2] = int(m.group(1))
+                    
                 if '<object>' in line:
                     is_object_record = True
                     continue
             
                 if '</object>' in line:
-                    objects.append([object_name, object_xmin, object_ymin, object_xmax, object_ymax])
-                    object_name = None
-                    object_xmin = None
-                    object_ymin = None
-                    object_xmax = None
-                    object_ymax = None
+                    objects.append(object_dict)
+                    object_dict = {'name': None, 'xmin': None, 'ymin': None, 'xmax': None, 'ymax': None}
                     is_object_record = False
                     continue
             
                 if is_object_record:
                     m = re_name.search(line)
                     if m:
-                        object_name = m.group(1)
+                        object_dict['name'] = m.group(1)
 
                     m = re_xmin.search(line)
                     if m:
-                        object_xmin = int(m.group(1))
+                        object_dict['xmin'] = int(m.group(1))
     
                     m = re_ymin.search(line)
                     if m:
-                        object_ymin = int(m.group(1))
+                        object_dict['ymin'] = int(m.group(1))
                 
                     m = re_xmax.search(line)
                     if m:
-                        object_xmax = int(m.group(1))
+                        object_dict['xmax'] = int(m.group(1))
                     
                     m = re_ymax.search(line)
                     if m:
-                        object_ymax = int(m.group(1))
+                        object_dict['ymax'] = int(m.group(1))
                 
-        return objects
+        return {'shape': tuple(img_shape), 'objects': objects}
     
     
     
@@ -572,7 +578,7 @@ class imgUtils:
                             buf = buf.replace(v, str(img.shape[1]))
                         elif '<height>' in buf:
                             v = re_height.search(buf).group(1)
-                            buf = buf.replace(v, str(img.shape[2]))
+                            buf = buf.replace(v, str(img.shape[0]))
                         elif 'xmin' in buf:
                             v = re_xmin.search(buf).group(1)
                             buf = buf.replace(v, str(int(int(v) * resize_ratio + shift_w)))
