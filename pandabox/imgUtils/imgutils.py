@@ -8,6 +8,9 @@ import random
 import numpy as np
 import cv2
 import skimage
+import skimage.io
+import skimage.transform
+import skimage.filters
 import joblib
 
 
@@ -18,8 +21,8 @@ class imgUtils:
     
     def __init__(self):
         
-        self.image_extension = ['jpeg', 'jpg', 'png', 'tif', 'tiff',
-                                'JPEG', 'JPG', 'PNG', 'TIF', 'TIFF']
+        self.image_extension = ['.jpeg', '.jpg', '.png', '.tif', '.tiff',
+                                '.JPEG', '.JPG', '.PNG', '.TIF', '.TIFF']
     
     
     
@@ -89,7 +92,7 @@ class imgUtils:
                 os.mkdir(_test_output_dirpath)
             
             for ext in self.image_extension:
-                for _f in glob.glob(os.path.join(data_dirpath, class_label, '*.' + ext)):
+                for _f in glob.glob(os.path.join(data_dirpath, class_label, '*' + ext)):
                     if random.random() > test_size:
                         shutil.copy(_f, os.path.join(_train_output_dirpath, os.path.basename(_f)))
                     else:
@@ -308,40 +311,43 @@ class imgUtils:
             bg_img = skimage.filters.gaussian(bg_img, sigma=random.uniform(0.5, 2.0), multichannel=True)
         
         return bg_img
+ 
+
+
+       
+    def __zero_padding(self, v, w, iaxis, kwargs):
+        v[:w[0]] = 0.0
+        v[-w[1]:] = 0.0
+        return v
+            
+        
+    def __get_padding(self, img):
+        h, w, c = img.shape
+        longest_edge = max(h, w)
+        top = 0
+        bottom = 0
+        left = 0
+        right = 0
+        if h < longest_edge:
+            diff_h = longest_edge - h
+            top = diff_h // 2
+            bottom = diff_h - top
+        elif w < longest_edge:
+            diff_w = longest_edge - w
+            left = diff_w // 2
+            right = diff_w - left
+        else:
+            pass
+         
+        img_constant = cv2.copyMakeBorder(img, top, bottom, left, right,
+                                          cv2.BORDER_CONSTANT, value=[0, 0, 0])   
+        return img_constant
         
         
         
     def __augmentation_fill_background(self, img, bg_img_tmpl):
         
-        def __zero_padding(v, w, iaxis, kwargs):
-            v[:w[0]] = 0.0
-            v[-w[1]:] = 0.0
-            return v
-            
-        
-        def __get_padding(img):
-            h, w, c = img.shape
-            longest_edge = max(h, w)
-            top = 0
-            bottom = 0
-            left = 0
-            right = 0
-            if h < longest_edge:
-                diff_h = longest_edge - h
-                top = diff_h // 2
-                bottom = diff_h - top
-            elif w < longest_edge:
-                diff_w = longest_edge - w
-                left = diff_w // 2
-                right = diff_w - left
-            else:
-                pass
-            
-            img_constant = cv2.copyMakeBorder(img, top, bottom, left, right,
-                                              cv2.BORDER_CONSTANT, value=[0, 0, 0])   
-            return img_constant
-        
-        
+       
         
         block_size = img.shape[0] if img.shape[0] > img.shape[1] else img.shape[1]
         
@@ -353,12 +359,12 @@ class imgUtils:
         y1 = y0 + block_size
         bg_img = bg_img[x0:x1, y0:y1]
         
-        img = __get_padding(img)
+        img = self.__get_padding(img)
         
         # make mask
         mask = skimage.color.rgb2gray(img)
         mask = np.pad(skimage.transform.resize(mask, (mask.shape[0] - 10, mask.shape[1] - 10), mode='constant'),
-                      5, __zero_padding)
+                      5, self.__zero_padding)
         
         img[mask < 0.001] = bg_img[mask < 0.001]
         return img
@@ -495,6 +501,108 @@ class imgUtils:
         r = joblib.Parallel(n_jobs=n_jobs, verbose=0)([joblib.delayed(__synthesis_ss)(i + 1) for i in range(n)])
 
         
+    
+    
+    def resize(self, input_path, size = (1024, 768), output_dirpath=None, output_prefix='resized_image', n_jobs=-1):
+        
+       
+        def __resize(img_path, size, output_dirpath, output_prefix):
+            print(img_path)
+            # open the original image
+            img_original = skimage.io.imread(img_path)[:, :, :3]
+            h, w, c = img_original.shape
+            
+            resize_ratio = None
+            if max(h, w) == h:
+                resize_ratio = size[1] / h
+            else:
+                resize_ratio = size[0] / w
+        
+            # resize the original image to target size
+            img = skimage.transform.rescale(img_original, resize_ratio, mode='reflect', anti_aliasing=True, multichannel=True)
+        
+            # make background
+            img_original_2x = skimage.transform.rescale(img_original, 1.5, mode='reflect', anti_aliasing=True, multichannel=True)
+            bg_img = self.__augmentation_generate_background(img_original_2x)
+            bh, bw, bc = bg_img.shape
+            block_size = img.shape[0] if img.shape[0] > img.shape[1] else img.shape[1]
+            x0 = int((bg_img.shape[0] - block_size) / 2)
+            x1 = x0 + block_size
+            y0 = int((bg_img.shape[1] - block_size) / 2)
+            y1 = y0 + block_size
+            bg_img = bg_img[x0:x1, y0:y1]
+        
+            # synthesis
+            img = self.__get_padding(img)
+            mask = skimage.color.rgb2gray(img)
+            mask = np.pad(skimage.transform.resize(mask, (mask.shape[0] - 2, mask.shape[1] - 2), mode='constant'),
+                          1, self.__zero_padding)
+            img[mask < 0.001] = bg_img[mask < 0.001]
+        
+            # print out resized image
+            if output_dirpath is None:
+                output_dirpath = ''
+            new_file_path = os.path.join(output_dirpath, output_prefix + '_' + os.path.basename(img_path))
+            skimage.io.imsave(new_file_path, img)
+        
+            # print out xml, if given
+            xml_path = os.path.splitext(img_path)[0] + '.xml'
+            new_file_path = os.path.join(output_dirpath, output_prefix + '_' + os.path.basename(xml_path))
+            print(new_file_path)
+            if xml_path is not None:
+                # shift
+                if max(h, w) == h:
+                    shift_h = 0
+                    shift_w = (h - w) * resize_ratio / 2
+                else:
+                    shift_w = 0
+                    shift_h = (w - h) * resize_ratio / 2
+                
+                re_width = re.compile(r'<width>([0-9]+)</width>')
+                re_height = re.compile(r'<height>([0-9]+)</height>')
+                re_xmin = re.compile(r'<xmin>([0-9]+)</xmin>')
+                re_xmax = re.compile(r'<xmax>([0-9]+)</xmax>')
+                re_ymin = re.compile(r'<ymin>([0-9]+)</ymin>')
+                re_ymax = re.compile(r'<ymax>([0-9]+)</ymax>')
+                with open(xml_path, 'r') as inxml, open(new_file_path, 'w') as outxml:
+                    for buf in inxml:
+                        v = None
+                        if '<width>' in buf:
+                            v = re_width.search(buf).group(1)
+                            buf = buf.replace(v, str(img.shape[1]))
+                        elif '<height>' in buf:
+                            v = re_height.search(buf).group(1)
+                            buf = buf.replace(v, str(img.shape[2]))
+                        elif 'xmin' in buf:
+                            v = re_xmin.search(buf).group(1)
+                            buf = buf.replace(v, str(int(int(v) * resize_ratio + shift_w)))
+                        elif 'xmax' in buf:
+                            v = re_xmax.search(buf).group(1)
+                            buf = buf.replace(v, str(int(int(v) * resize_ratio + shift_w)))
+                        elif 'ymin' in buf:
+                            v = re_ymin.search(buf).group(1)
+                            buf = buf.replace(v, str(int(int(v) * resize_ratio + shift_h)))
+                        elif 'ymax' in buf:
+                            v = re_ymax.search(buf).group(1)
+                            buf = buf.replace(v, str(int(int(v) * resize_ratio + shift_h)))
+                    
+                        outxml.write(buf)
+                     
+        
+               
+        image_files = []
+        if os.path.isfile(input_path):
+            image_files = [input_path]
+        elif os.path.isdir(input_path):
+            print(input_path)
+            for f in os.listdir(input_path):
+                if os.path.splitext(f)[1] in self.image_extension:
+                    image_files.append(os.path.join(input_path, f))
+        
+        r = joblib.Parallel(n_jobs=n_jobs, verbose=0)([joblib.delayed(__resize)(image_file, size,
+                        output_dirpath, output_prefix) for image_file in image_files])
+            
+            
 
 if __name__ == '__main__':
     
