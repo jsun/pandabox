@@ -9,7 +9,7 @@ class GTF:
     
     
     
-    def parse_gtf(self, file_path, feature_type='gene', feature_id='gene_id', output_fmt=3):
+    def parse_gtf(self, file_path, feature_type='gene', feature_id='gene_id', feature_val=None, output_fmt=3):
         '''
         Input: /path/to/gtf
         Output: dictionary containing lists of gene annotations.
@@ -20,30 +20,45 @@ class GTF:
         
         gene_ranges = {}
         
-        geneid_pattern = re.compile(gene_id + ' "([^"]+)";')
+        # check format (GTF or GFF) and set the regex pattern
+        if os.path.splitext(file_path)[1] == '.gtf':
+            geneid_pattern = re.compile(feature_id + ' "([^"]+)";')
+        else:
+            geneid_pattern = re.compile(feature_id + ':([^:;]+);')
+        
         
         with open(file_path, 'r') as infh:
             for file_buff in infh:
                 
                 gtf_record = file_buff.replace('\n', '').split('\t')
-                
                 if len(gtf_record) < 9:
                     continue
                 
-                if gtf_record[2] == feature:
+                # only search the specified feature type
+                if gtf_record[2] == feature_type:
                     
-                    if gtf_record[0] not in gene_ranges:
-                        gene_ranges[gtf_record[0]] = []
-                    
+                    # find feature id (gene id, exon id, etc...)
                     m = geneid_pattern.search(gtf_record[8])
                     if m:
+                        fid = m.group(1)
+                        
+                        if feature_val is not None and feature_val != fid:
+                            continue
+                        
+                        
+                        # add record if every conditions are satisfied
+                        if gtf_record[0] not in gene_ranges:
+                            gene_ranges[gtf_record[0]] = []
+    
                         if output_fmt == 3:
-                            gene_ranges[gtf_record[0]].append([m.group(1), int(gtf_record[3]), int(gtf_record[4])])
+                            gene_ranges[gtf_record[0]].append([fid, int(gtf_record[3]), int(gtf_record[4])])
                         elif output_fmt == 2:
                             gene_ranges[gtf_record[0]].append([int(gtf_record[3]), int(gtf_record[4])])
                         else:
                             raise ValueError('Only 2 or 3 can be set in `output_fmt` argument.')
-        
+                
+                
+                
         return gene_ranges
     
     

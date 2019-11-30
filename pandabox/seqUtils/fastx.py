@@ -51,6 +51,7 @@ class FASTX:
                 
     
     
+    
     def parse_fastq(self, file_path):
         """Parse FASTQ file.
         

@@ -2,71 +2,9 @@ import os
 import glob
 import pickle
 import numpy as np
-import skimage
-import skimage.io
+import sklearn
 import cv2
-import torch
-
-
-
-
-
-class nnTorchResize():
-    
-    def __init__(self, shape=(512,512)):
-        self.shape = shape
-        
-        
-    def __call__(self, x):
-        h, w, c = x.shape
-        longest_edge = max(h, w)
-        top = 0
-        bottom = 0
-        left = 0
-        right = 0
-        if h < longest_edge:
-            diff_h = longest_edge - h
-            top = diff_h // 2
-            bottom = diff_h - top
-        elif w < longest_edge:
-            diff_w = longest_edge - w
-            left = diff_w // 2
-            right = diff_w - left
-        else:
-            pass
-        
-        x = cv2.copyMakeBorder(x, top, bottom, left, right,
-                               cv2.BORDER_CONSTANT, value=[0, 0, 0])
-        x = cv2.resize(x, self.shape)
-        
-        return x
-  
-
-
-class nnTorchDataset(torch.utils.data.Dataset):
-    # Dataset class for PyTorch
-    
-    def __init__(self, images, labels, transform):
-        self.images = images
-        self.labels = labels
-        self.transform = transform
-    
-    
-    def __len__(self):
-        return len(self.images)
-    
-    
-    def __getitem__(self, i):
-        x = cv2.imread(self.images[i], cv2.IMREAD_COLOR)
-        if self.transform:
-            x = self.transform(x)
-        y = self.labels[i]
-        return x, y
-
-
-
-
-
+import keras
 
 
 
