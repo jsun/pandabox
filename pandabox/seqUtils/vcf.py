@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import gzip
 
 
 
@@ -24,36 +25,46 @@ class VCF:
         
         snp_dict = {}
         
-        with open(file_path, 'r') as infh:
-            for file_buff in infh:
+        
+        infh = None
+        if os.path.splitext(file_path)[1] in ['.gz', '.gzip']:
+            infh = gzip.open(file_path, 'rt')
+        else:
+            infh = open(file_path, 'r')
+        
+        
+        for file_buff in infh:
                 
-                if file_buff[0] == '#':
-                    continue
+            if file_buff[0] == '#':
+                continue
                 
-                vcf_record = file_buff.replace('\n', '').split('\t')
+            vcf_record = file_buff.replace('\n', '').split('\t')
                 
-                # discard if not target chromosome
-                if chr_name is not None and chr_name != vcf_record[0]:
-                    continue
+            # discard if not target chromosome
+            if chr_name is not None and chr_name != vcf_record[0]:
+                continue
                 
-                # discard if not in the target ranges
-                if pos_range is not None and (int(vcf_record[1]) < pos_range[0] or pos_range[1] < int(vcf_record[1])):
-                    continue
+            # discard if not in the target ranges
+            if pos_range is not None and (int(vcf_record[1]) < pos_range[0] or pos_range[1] < int(vcf_record[1])):
+                continue
                 
-                if vcf_record[0] not in snp_dict:
-                    snp_dict[vcf_record[0]] = []
+            if vcf_record[0] not in snp_dict:
+                snp_dict[vcf_record[0]] = []
+            
+            vcf_tags = {}
+            for attr, val in zip(vcf_record[8].split(':'), vcf_record[9].split(':')):
+                vcf_tags[attr] = val
                 
-                vcf_tags = {}
-                for attr, val in zip(vcf_record[8].split(':'), vcf_record[9].split(':')):
-                    vcf_tags[attr] = val
-                
-                snp_dict[vcf_record[0]].append({
-                    'POS': int(vcf_record[1]),
-                    'REF': vcf_record[3],
-                    'ALT': vcf_record[4],
-                    'QUAL': int(vcf_record[5]),
-                    'INFO': vcf_tags
-                })
+            snp_dict[vcf_record[0]].append({
+                'POS': int(vcf_record[1]),
+                'REF': vcf_record[3],
+                'ALT': vcf_record[4],
+                'QUAL': int(vcf_record[5]),
+                'INFO': vcf_tags
+            })
+        
+        infh.close()
+        
         
         if len(snp_dict) > 0:
             for chr_name in snp_dict.keys():

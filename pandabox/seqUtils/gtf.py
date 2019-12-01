@@ -1,6 +1,8 @@
 import os
 import sys
 import re
+import gzip
+
 
 class GTF:
     
@@ -9,7 +11,7 @@ class GTF:
     
     
     
-    def parse_gtf(self, file_path, feature_type='gene', feature_id='gene_id', feature_val=None, output_fmt=3):
+    def parse_gtf(self, file_path, feature_type='gene', feature_idtag='gene_id', feature_id=None, output_fmt=3):
         '''
         Input: /path/to/gtf
         Output: dictionary containing lists of gene annotations.
@@ -20,44 +22,52 @@ class GTF:
         
         gene_ranges = {}
         
-        # check format (GTF or GFF) and set the regex pattern
-        if os.path.splitext(file_path)[1] == '.gtf':
-            geneid_pattern = re.compile(feature_id + ' "([^"]+)";')
+       
+
+        infh = None
+        if os.path.splitext(file_path)[1] in ['.gz', '.gzip']:
+            infh = gzip.open(file_path, 'rt')
         else:
-            geneid_pattern = re.compile(feature_id + ':([^:;]+);')
+            infh = open(file_path, 'r')
+        
+
+        # check format (GTF or GFF) and set the regex pattern
+        file_path_wihtoutgz = re.sub('\.gz$|\.gzip$', '', file_path)
+        if os.path.splitext(file_path_wihtoutgz)[1] == '.gtf':
+            geneid_pattern = re.compile(feature_idtag + ' "([^"]+)";')
+        else:
+            geneid_pattern = re.compile(feature_idtag + ':([^:;]+);')
         
         
-        with open(file_path, 'r') as infh:
-            for file_buff in infh:
+        for file_buff in infh:
+            gtf_record = file_buff.replace('\n', '').split('\t')
+            if len(gtf_record) < 9:
+                continue
                 
-                gtf_record = file_buff.replace('\n', '').split('\t')
-                if len(gtf_record) < 9:
-                    continue
-                
-                # only search the specified feature type
-                if gtf_record[2] == feature_type:
+            # only search the specified feature type
+            if gtf_record[2] == feature_type:
                     
-                    # find feature id (gene id, exon id, etc...)
-                    m = geneid_pattern.search(gtf_record[8])
-                    if m:
-                        fid = m.group(1)
+                # find feature id (gene id, exon id, etc...)
+                m = geneid_pattern.search(gtf_record[8])
+                if m:
+                    fid = m.group(1)
                         
-                        if feature_val is not None and feature_val != fid:
-                            continue
+                    if feature_id is not None and feature_id != fid:
+                        continue
                         
                         
-                        # add record if every conditions are satisfied
-                        if gtf_record[0] not in gene_ranges:
-                            gene_ranges[gtf_record[0]] = []
+                    # add record if every conditions are satisfied
+                    if gtf_record[0] not in gene_ranges:
+                        gene_ranges[gtf_record[0]] = []
     
-                        if output_fmt == 3:
-                            gene_ranges[gtf_record[0]].append([fid, int(gtf_record[3]), int(gtf_record[4])])
-                        elif output_fmt == 2:
-                            gene_ranges[gtf_record[0]].append([int(gtf_record[3]), int(gtf_record[4])])
-                        else:
-                            raise ValueError('Only 2 or 3 can be set in `output_fmt` argument.')
+                    if output_fmt == 3:
+                        gene_ranges[gtf_record[0]].append([fid, int(gtf_record[3]), int(gtf_record[4])])
+                    elif output_fmt == 2:
+                        gene_ranges[gtf_record[0]].append([int(gtf_record[3]), int(gtf_record[4])])
+                    else:
+                        raise ValueError('Only 2 or 3 can be set in `output_fmt` argument.')
                 
-                
+        infh.close()
                 
         return gene_ranges
     
@@ -99,21 +109,29 @@ class GTF:
         #
         idptn = re.compile(attr_pattern + ' "([^"]+)";')
         gene_length = {}
-
+        
+        
+        gfffh = None
+        if os.path.splitext(gff_path)[1] in ['.gz', '.gzip']:
+            gfffh = gzip.open(file_path, 'rt')
+        else:
+            gfffh = open(file_path, 'r')
+        
         # save the coordinates of the positions of all exons.
-        with open(gff_file, 'r') as gfffh:
-            for buf in gfffh:
-                if buf[0:1] == '#':
-                    continue
-                buf_records = buf.split('\t')
-                if buf_records[2] == 'exon':
-                    mat = idptn.search(buf_records[8])
-                    if mat:
-                        gene_name = mat.group(1)
-                        if gene_name not in gene_length:
-                            gene_length[gene_name] = []
-                        gene_length[gene_name].append([int(buf_records[3]), int(buf_records[4])])
-
+        for buf in gfffh:
+            if buf[0:1] == '#':
+                continue
+            buf_records = buf.split('\t')
+            if buf_records[2] == 'exon':
+                mat = idptn.search(buf_records[8])
+                if mat:
+                    gene_name = mat.group(1)
+                    if gene_name not in gene_length:
+                        gene_length[gene_name] = []
+                    gene_length[gene_name].append([int(buf_records[3]), int(buf_records[4])])
+        
+        gfffh.close()
+        
         # find the maximum and minimum coodinates of the position of exons for each gene.
         gene_length_max = {}
         gene_length_min = {}

@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import gzip
 
 class FASTX:
     
@@ -26,29 +27,36 @@ class FASTX:
         entry_id = None
         entry_seq = None
         
-        with open(file_path, 'r') as infh:
-            for file_buff in infh:
-                file_buff = file_buff.replace('\n', '')
+        infh = None
+        if os.path.splitext(file_path)[1] in ['.gz', '.gzip']:
+            infh = gzip.open(file_path, 'rt')
+        else:
+            infh = open(file_path, 'r')
+
+        for file_buff in infh:
+            file_buff = file_buff.replace('\n', '')
                 
-                # entry header
-                if file_buff[0:1] == '>':
+            # entry header
+            if file_buff[0:1] == '>':
                     
-                    # return the previous entry
-                    if entry_id is not None and entry_seq is not None:
-                        yield {'id': entry_id, 'seq': entry_seq}
+                # return the previous entry
+                if entry_id is not None and entry_seq is not None:
+                    yield {'id': entry_id, 'seq': entry_seq}
                     
-                    entry_id = file_buff[1:]
-                    entry_seq = None
+                entry_id = file_buff[1:]
+                entry_seq = None
                 
-                # entry sequence
-                else:
-                    if entry_seq is None:
-                        entry_seq = ''
-                    entry_seq = entry_seq + file_buff
+            # entry sequence
+            else:
+                if entry_seq is None:
+                    entry_seq = ''
+                entry_seq = entry_seq + file_buff
+        
+        infh.close()
         
         # return the last entry
         yield {'id': entry_id, 'seq': entry_seq}
-                
+        
     
     
     
@@ -68,34 +76,38 @@ class FASTX:
         
         """
         
-        with open(file_path, 'r') as infh:
+        infh = None
+        if os.path.splitext(file_path)[1] in ['.gz', '.gzip']:
+            infh = gzip.open(file_path, 'rb')
+        else:
+            infh = open(file_path, 'r')
+        
+        # 1 for header, 2 for sequence, 3 for header, 4 for quality
+        i = 0
             
-            # 1 for header, 2 for sequence, 3 for header, 4 for quality
-            i = 0
+        entry_id = None
+        entry_seq = None
+        entry_qual = None
             
-            entry_id = None
-            entry_seq = None
-            entry_qual = None
-            
-            for file_buff in infh:
-                i = i + 1
+        for file_buff in infh:
+            i = i + 1
                 
-                file_buff = file_buff.replace('\n', '')
+            file_buff = file_buff.replace('\n', '')
                 
-                if i == 1:
-                    entry_id = file_buff[1:]
-                elif i == 2:
-                    entry_seq = file_buff
-                elif i == 3:
-                    pass
-                elif i == 4:
-                    entry_qual = file_buff
+            if i == 1:
+                entry_id = file_buff[1:]
+            elif i == 2:
+                entry_seq = file_buff
+            elif i == 3:
+                pass
+            elif i == 4:
+                entry_qual = file_buff
                     
-                    yield {'id': entry_id, 'seq': entry_seq, 'quality': entry_qual}
+                yield {'id': entry_id, 'seq': entry_seq, 'quality': entry_qual}
                     
-                    entry_id = None
-                    entry_seq = None
-                    entry_qual = None
+                entry_id = None
+                entry_seq = None
+                entry_qual = None
     
-    
+        infh.close()
     
