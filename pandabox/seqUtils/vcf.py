@@ -59,7 +59,7 @@ class VCF:
                 'POS': int(vcf_record[1]),
                 'REF': vcf_record[3],
                 'ALT': vcf_record[4],
-                'QUAL': int(vcf_record[5]),
+                'QUAL': float(vcf_record[5]),
                 'INFO': vcf_tags
             })
         
